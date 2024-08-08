@@ -46,7 +46,16 @@ Arguments parse_arguments(int argc, char* argv[]) {
          "number of busy waits to perform");
 
     po::variables_map vm;
-    po::store(po::parse_command_line(argc, argv, desc), vm);
+    try {
+        po::store(po::parse_command_line(argc, argv, desc), vm);
+    } catch (const po::error& e) {
+        std::cerr << "Error: " << e.what() << std::endl;
+#ifdef WITH_MPI
+        MPI_Abort(MPI_COMM_WORLD, 1);
+#else
+        std::exit(1);
+#endif
+    }
     po::notify(vm);
 
     if (vm.count("help") || !vm.count("duration") || !vm.count("cycles")) {
@@ -58,6 +67,14 @@ Arguments parse_arguments(int argc, char* argv[]) {
 #endif
     }
 
+    if (vm.count("version")) {
+        std::cout << "PinTest version " << PINTEST_VERSION << std::endl;    
+#ifdef WITH_MPI
+        MPI_Abort(MPI_COMM_WORLD, 0);
+#else
+        std::exit(0);
+#endif
+    }
     // check the values of the command line arguments
     // duration should be a positive integer,
     // cycles should be a positive integer, or zero
