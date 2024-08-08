@@ -5,8 +5,12 @@
  * Each thread also performs a busy wait to keep the core busy, so that it can be monitored whether the thread remains on the same core.
  *
  * The application takes the following arguments:
- *   - duration: the duration of the busy wait in seconds, default value 1
- *   - cycles: the number of busy waits to perform, default value 2
+ *   - duration: the duration of the busy wait in seconds, default value 1,
+ *     the duration should be a positive integer
+ *   - cycles: the number of busy waits to perform, default value 2,
+ *     the cycles should be a positive integer, or zero
+ *   - version: print the version number
+ *   - help: print the help message
  *
  * The application uses Boost to parse the command line arguments.
  *
@@ -43,7 +47,8 @@ Arguments parse_arguments(int argc, char* argv[]) {
         ("duration", po::value<int>(&args.duration)->default_value(1),
          "duration of the busy wait in seconds")
         ("cycles", po::value<int>(&args.cycles)->default_value(2),
-         "number of busy waits to perform");
+         "number of busy waits to perform")
+        ("version", "print version number");
 
     po::variables_map vm;
     try {

@@ -76,3 +76,14 @@ set_tests_properties(pintest_wrong_cycle_value PROPERTIES WILL_FAIL TRUE)
 # A non-defined option should cause an error as well
 add_test(NAME pintest_wrong_option COMMAND pintest --non-defined-option)
 set_tests_properties(pintest_wrong_option PROPERTIES WILL_FAIL TRUE)
+
+# Test version option
+add_test(NAME pintest_version COMMAND pintest --version)
+
+# Test help option
+add_test(NAME pintest_help COMMAND pintest --help)
+
+# Test help option with MPI version
+if(MPI_CXX_FOUND)
+    add_test(NAME pintest_mpi_help COMMAND pintest_mpi --help)
+endif()
