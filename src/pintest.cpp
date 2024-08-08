@@ -58,6 +58,23 @@ Arguments parse_arguments(int argc, char* argv[]) {
 #endif
     }
 
+    // check the values of the command line arguments
+    // duration should be a positive integer,
+    // cycles should be a positive integer, or zero
+    if (args.duration <= 0) {
+        std::cerr << "Error: duration should be a positive integer" << std::endl;
+    }
+    if (args.cycles < 0) {
+        std::cerr << "Error: cycles should be a positive integer, or zero" << std::endl;
+    }
+    if (args.duration <= 0 || args.cycles < 0) {
+#ifdef WITH_MPI
+        MPI_Abort(MPI_COMM_WORLD, 1);   
+#else
+        std::exit(1);
+#endif
+    }
+
     return args;
 }
 
@@ -185,10 +202,12 @@ int main(int argc, char* argv[]) {
 #ifdef _OPENMP
 #pragma omp parallel
 #endif
-    report_core();
-    for (int i = 0; i < args.cycles; ++i) {
-        busy_wait(args.duration);
+    {
         report_core();
+        for (int i = 0; i < args.cycles; ++i) {
+            busy_wait(args.duration);
+            report_core();
+        }
     }
 #ifdef WITH_MPI
     MPI_Finalize();
