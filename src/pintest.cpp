@@ -185,9 +185,10 @@ int main(int argc, char* argv[]) {
 #ifdef _OPENMP
 #pragma omp parallel
 #endif
+    report_core();
     for (int i = 0; i < args.cycles; ++i) {
-        report_core();
         busy_wait(args.duration);
+        report_core();
     }
 #ifdef WITH_MPI
     MPI_Finalize();
