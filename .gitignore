@@ -1,0 +1,10 @@
+# editor backup file
+*~
+*.swp
+*.bak
+
+# build directory
+build/
+
+# testing directory
+Testing
