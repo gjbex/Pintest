@@ -21,9 +21,10 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
-    - name: Install dependencies
+    - name: Update software repository info
       # install the dependencies for this project using apt
       run: sudo apt update
+    - name: Install dependencies
       run: sudo apt install -y libboost-dev
     - name: Configure CMake
       # Configure CMake in a 'build' subdirectory. `CMAKE_BUILD_TYPE` is only required if you are using a single-configuration generator such as make.
