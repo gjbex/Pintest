@@ -24,4 +24,7 @@ if (NOT MPI_CXX_FOUND)
     message(WARNING "MPI not found, MPI versions will not be built")
 endif()
 
+include(CTest)
+enable_testing()
+
 add_subdirectory(src)
