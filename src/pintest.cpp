@@ -5,8 +5,12 @@
  * Each thread also performs a busy wait to keep the core busy, so that it can be monitored whether the thread remains on the same core.
  *
  * The application takes the following arguments:
- *   - duration: the duration of the busy wait in seconds, default value 1
- *   - cycles: the number of busy waits to perform, default value 2
+ *   - duration: the duration of the busy wait in seconds, default value 1,
+ *     the duration should be a positive integer
+ *   - cycles: the number of busy waits to perform, default value 2,
+ *     the cycles should be a positive integer, or zero
+ *   - version: print the version number
+ *   - help: print the help message
  *
  * The application uses Boost to parse the command line arguments.
  *
@@ -43,10 +47,20 @@ Arguments parse_arguments(int argc, char* argv[]) {
         ("duration", po::value<int>(&args.duration)->default_value(1),
          "duration of the busy wait in seconds")
         ("cycles", po::value<int>(&args.cycles)->default_value(2),
-         "number of busy waits to perform");
+         "number of busy waits to perform")
+        ("version", "print version number");
 
     po::variables_map vm;
-    po::store(po::parse_command_line(argc, argv, desc), vm);
+    try {
+        po::store(po::parse_command_line(argc, argv, desc), vm);
+    } catch (const po::error& e) {
+        std::cerr << "Error: " << e.what() << std::endl;
+#ifdef WITH_MPI
+        MPI_Abort(MPI_COMM_WORLD, 1);
+#else
+        std::exit(1);
+#endif
+    }
     po::notify(vm);
 
     if (vm.count("help") || !vm.count("duration") || !vm.count("cycles")) {
@@ -55,6 +69,31 @@ Arguments parse_arguments(int argc, char* argv[]) {
         MPI_Abort(MPI_COMM_WORLD, 0);
 #else
         std::exit(0);
+#endif
+    }
+
+    if (vm.count("version")) {
+        std::cout << "PinTest version " << PINTEST_VERSION << std::endl;    
+#ifdef WITH_MPI
+        MPI_Abort(MPI_COMM_WORLD, 0);
+#else
+        std::exit(0);
+#endif
+    }
+    // check the values of the command line arguments
+    // duration should be a positive integer,
+    // cycles should be a positive integer, or zero
+    if (args.duration <= 0) {
+        std::cerr << "Error: duration should be a positive integer" << std::endl;
+    }
+    if (args.cycles < 0) {
+        std::cerr << "Error: cycles should be a positive integer, or zero" << std::endl;
+    }
+    if (args.duration <= 0 || args.cycles < 0) {
+#ifdef WITH_MPI
+        MPI_Abort(MPI_COMM_WORLD, 1);   
+#else
+        std::exit(1);
 #endif
     }
 
@@ -185,9 +224,12 @@ int main(int argc, char* argv[]) {
 #ifdef _OPENMP
 #pragma omp parallel
 #endif
-    for (int i = 0; i < args.cycles; ++i) {
+    {
         report_core();
-        busy_wait(args.duration);
+        for (int i = 0; i < args.cycles; ++i) {
+            busy_wait(args.duration);
+            report_core();
+        }
     }
 #ifdef WITH_MPI
     MPI_Finalize();
