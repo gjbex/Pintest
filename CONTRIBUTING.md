@@ -30,7 +30,7 @@ For pull requests, a few things should be noted:
 
 Of course, although all contributions are very much appreciated, some of
 them might not be integrated into the material.  If that should happen,
- I'll try to justify that decision, and it can be discussed.
+We will try to justify that decision, and it can be discussed.
 
 
 ## Citation and licensing
