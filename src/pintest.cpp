@@ -31,14 +31,27 @@
 #include <sched.h>
 #include <sstream>
 
+// Define the version number to silence compiler errors while editing
+#ifndef PINTEST_VERSION
+#define PINTEST_VERSION "not set"
+#endif
+
 // Structure to hold the command line arguments
 struct Arguments {
     int duration;
     int cycles;
 };
 
+// Enumeration to hold parse_arguments status
+enum class ParseStatus {
+    OK,
+    HELP,
+    VERSION,
+    ERROR
+};
+
 // Parse the command line arguments
-Arguments parse_arguments(int argc, char* argv[]) {
+auto parse_arguments(int argc, char* argv[]) {
     Arguments args;
     namespace po = boost::program_options;
     po::options_description desc("Allowed options");
@@ -50,54 +63,40 @@ Arguments parse_arguments(int argc, char* argv[]) {
          "number of busy waits to perform")
         ("version", "print version number");
 
+    ParseStatus status {ParseStatus::OK};
+
     po::variables_map vm;
     try {
         po::store(po::parse_command_line(argc, argv, desc), vm);
     } catch (const po::error& e) {
         std::cerr << "Error: " << e.what() << std::endl;
-#ifdef WITH_MPI
-        MPI_Abort(MPI_COMM_WORLD, 1);
-#else
-        std::exit(1);
-#endif
+        status = ParseStatus::ERROR;
     }
     po::notify(vm);
 
+    // check if help is requested
     if (vm.count("help") || !vm.count("duration") || !vm.count("cycles")) {
         std::cout << desc << std::endl;
-#ifdef WITH_MPI
-        MPI_Abort(MPI_COMM_WORLD, 0);
-#else
-        std::exit(0);
-#endif
+        status = ParseStatus::HELP;
     }
 
+    // check if version is requested
     if (vm.count("version")) {
         std::cout << "PinTest version " << PINTEST_VERSION << std::endl;    
-#ifdef WITH_MPI
-        MPI_Abort(MPI_COMM_WORLD, 0);
-#else
-        std::exit(0);
-#endif
+        status = ParseStatus::VERSION;
     }
-    // check the values of the command line arguments
-    // duration should be a positive integer,
-    // cycles should be a positive integer, or zero
+
+    // check if the duration and cycles are valid
     if (args.duration <= 0) {
         std::cerr << "Error: duration should be a positive integer" << std::endl;
+        status = ParseStatus::ERROR;
     }
     if (args.cycles < 0) {
         std::cerr << "Error: cycles should be a positive integer, or zero" << std::endl;
-    }
-    if (args.duration <= 0 || args.cycles < 0) {
-#ifdef WITH_MPI
-        MPI_Abort(MPI_COMM_WORLD, 1);   
-#else
-        std::exit(1);
-#endif
+        status = ParseStatus::ERROR;
     }
 
-    return args;
+    return std::make_tuple(args, status);
 }
 
 // function to create a timestamp in the format "YYYY-MM-DD HH:MM:SS.mmm"
@@ -175,12 +174,32 @@ Arguments broadcast_arguments(int argc, char* argv[]) {
     MPI_Datatype arguments_type;
     create_mpi_arguments_type(&arguments_type);
 #endif
-    Arguments args;
+    Arguments args {};
+    ParseStatus status {};
     if (rank == 0) {
-        args = parse_arguments(argc, argv);
+        std::tie(args, status) = parse_arguments(argc, argv);
     }
+
+    // If an error occurred, abort the program
+    if (status == ParseStatus::ERROR) {
+#ifdef WITH_MPI
+        MPI_Abort(MPI_COMM_WORLD, 1);   
+#else
+        std::exit(1);
+#endif
+    }
+
+    // If help or version is requested, finalize MPI and exit
+    if (status == ParseStatus::HELP || status == ParseStatus::VERSION) {
+#ifdef WITH_MPI
+        MPI_Finalize();
+#endif
+        std::exit(0);
+    }
+
 #ifdef WITH_MPI
     MPI_Bcast(&args, 1, arguments_type, 0, MPI_COMM_WORLD);
+
 #endif
     return args;
 }
