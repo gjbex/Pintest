@@ -4,7 +4,7 @@ project(PinTest CXX)
 # Set the version
 set(PinTest_VERSION_MAJOR 1)
 set(PinTest_VERSION_MINOR 0)
-set(PinTest_VERSION_PATCH 1)
+set(PinTest_VERSION_PATCH 2)
 
 add_definitions(
     -DPINTEST_VERSION="${PinTest_VERSION_MAJOR}.${PinTest_VERSION_MINOR}.${PinTest_VERSION_PATCH}"
