@@ -98,6 +98,58 @@ auto parse_arguments(int argc, char* argv[]) {
 
     return std::make_tuple(args, status);
 }
+//
+// function to create and commit a custom MPI data type for the Arguments structure
+#ifdef WITH_MPI
+void create_mpi_arguments_type(MPI_Datatype* arguments_type) {
+    MPI_Datatype types[2] = {MPI_INT, MPI_INT};
+    int block_lengths[2] = {1, 1};
+    MPI_Aint offsets[2];
+    offsets[0] = offsetof(Arguments, duration);
+    offsets[1] = offsetof(Arguments, cycles);
+    MPI_Type_create_struct(2, block_lengths, offsets, types, arguments_type);
+    MPI_Type_commit(arguments_type);
+}
+#endif
+
+// function that lets rank 0 parse the command line arguments and broadcast them to all other ranks
+Arguments broadcast_arguments(int argc, char* argv[]) {
+    int rank {0};
+#ifdef WITH_MPI
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Datatype arguments_type;
+    create_mpi_arguments_type(&arguments_type);
+#endif
+    Arguments args {};
+    ParseStatus status {};
+    if (rank == 0) {
+        std::tie(args, status) = parse_arguments(argc, argv);
+    }
+
+    // If an error occurred, abort the program
+    if (status == ParseStatus::ERROR) {
+#ifdef WITH_MPI
+        MPI_Abort(MPI_COMM_WORLD, 1);   
+#else
+        std::exit(1);
+#endif
+    }
+
+    // If help or version is requested, finalize MPI and exit
+    if (status == ParseStatus::HELP || status == ParseStatus::VERSION) {
+#ifdef WITH_MPI
+        MPI_Finalize();
+#endif
+        std::exit(0);
+    }
+
+#ifdef WITH_MPI
+    MPI_Bcast(&args, 1, arguments_type, 0, MPI_COMM_WORLD);
+
+#endif
+    return args;
+}
+
 
 // function to create a timestamp in the format "YYYY-MM-DD HH:MM:SS.mmm"
 std::string create_timestamp() {
@@ -151,57 +203,6 @@ void busy_wait(int duration) {
             break;
         }
     }
-}
-
-// function to create and commit a custom MPI data type for the Arguments structure
-#ifdef WITH_MPI
-void create_mpi_arguments_type(MPI_Datatype* arguments_type) {
-    MPI_Datatype types[2] = {MPI_INT, MPI_INT};
-    int block_lengths[2] = {1, 1};
-    MPI_Aint offsets[2];
-    offsets[0] = offsetof(Arguments, duration);
-    offsets[1] = offsetof(Arguments, cycles);
-    MPI_Type_create_struct(2, block_lengths, offsets, types, arguments_type);
-    MPI_Type_commit(arguments_type);
-}
-#endif
-
-// function that lets rank 0 parse the command line arguments and broadcast them to all other ranks
-Arguments broadcast_arguments(int argc, char* argv[]) {
-    int rank {0};
-#ifdef WITH_MPI
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Datatype arguments_type;
-    create_mpi_arguments_type(&arguments_type);
-#endif
-    Arguments args {};
-    ParseStatus status {};
-    if (rank == 0) {
-        std::tie(args, status) = parse_arguments(argc, argv);
-    }
-
-    // If an error occurred, abort the program
-    if (status == ParseStatus::ERROR) {
-#ifdef WITH_MPI
-        MPI_Abort(MPI_COMM_WORLD, 1);   
-#else
-        std::exit(1);
-#endif
-    }
-
-    // If help or version is requested, finalize MPI and exit
-    if (status == ParseStatus::HELP || status == ParseStatus::VERSION) {
-#ifdef WITH_MPI
-        MPI_Finalize();
-#endif
-        std::exit(0);
-    }
-
-#ifdef WITH_MPI
-    MPI_Bcast(&args, 1, arguments_type, 0, MPI_COMM_WORLD);
-
-#endif
-    return args;
 }
 
 // function that provides runtime feedback on the command line arguments,
