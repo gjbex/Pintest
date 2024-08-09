@@ -8,7 +8,7 @@ You are very welcome to contribute to this repository.
 This can be done in several ways, depending on how familiar you are with
 the GitHub workflow:
 
-  * simply send an [email](geertjan.bex@uhasselt.be),
+  * simply send an [email](mailto:geertjan.bex@uhasselt.be),
   * [create an issue](https://help.github.com/articles/creating-an-issue/)
     on GitHub, or
   * [fork the repository](https://help.github.com/articles/fork-a-repo/)
