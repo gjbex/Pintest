@@ -31,14 +31,27 @@
 #include <sched.h>
 #include <sstream>
 
+// Define the version number to silence compiler errors while editing
+#ifndef PINTEST_VERSION
+#define PINTEST_VERSION "not set"
+#endif
+
 // Structure to hold the command line arguments
 struct Arguments {
     int duration;
     int cycles;
 };
 
+// Enumeration to hold parse_arguments status
+enum class ParseStatus {
+    OK,
+    HELP,
+    VERSION,
+    ERROR
+};
+
 // Parse the command line arguments
-Arguments parse_arguments(int argc, char* argv[]) {
+auto parse_arguments(int argc, char* argv[]) {
     Arguments args;
     namespace po = boost::program_options;
     po::options_description desc("Allowed options");
@@ -50,46 +63,72 @@ Arguments parse_arguments(int argc, char* argv[]) {
          "number of busy waits to perform")
         ("version", "print version number");
 
+    ParseStatus status {ParseStatus::OK};
+
     po::variables_map vm;
     try {
         po::store(po::parse_command_line(argc, argv, desc), vm);
     } catch (const po::error& e) {
         std::cerr << "Error: " << e.what() << std::endl;
-#ifdef WITH_MPI
-        MPI_Abort(MPI_COMM_WORLD, 1);
-#else
-        std::exit(1);
-#endif
+        status = ParseStatus::ERROR;
+        return std::make_tuple(args, status);
     }
     po::notify(vm);
 
+    // check if help is requested
     if (vm.count("help") || !vm.count("duration") || !vm.count("cycles")) {
         std::cout << desc << std::endl;
-#ifdef WITH_MPI
-        MPI_Abort(MPI_COMM_WORLD, 0);
-#else
-        std::exit(0);
-#endif
+        status = ParseStatus::HELP;
     }
 
+    // check if version is requested
     if (vm.count("version")) {
         std::cout << "PinTest version " << PINTEST_VERSION << std::endl;    
-#ifdef WITH_MPI
-        MPI_Abort(MPI_COMM_WORLD, 0);
-#else
-        std::exit(0);
-#endif
+        status = ParseStatus::VERSION;
     }
-    // check the values of the command line arguments
-    // duration should be a positive integer,
-    // cycles should be a positive integer, or zero
+
+    // check if the duration and cycles are valid
     if (args.duration <= 0) {
         std::cerr << "Error: duration should be a positive integer" << std::endl;
+        status = ParseStatus::ERROR;
     }
     if (args.cycles < 0) {
         std::cerr << "Error: cycles should be a positive integer, or zero" << std::endl;
+        status = ParseStatus::ERROR;
     }
-    if (args.duration <= 0 || args.cycles < 0) {
+
+    return std::make_tuple(args, status);
+}
+//
+// function to create and commit a custom MPI data type for the Arguments structure
+#ifdef WITH_MPI
+void create_mpi_arguments_type(MPI_Datatype* arguments_type) {
+    MPI_Datatype types[2] = {MPI_INT, MPI_INT};
+    int block_lengths[2] = {1, 1};
+    MPI_Aint offsets[2];
+    offsets[0] = offsetof(Arguments, duration);
+    offsets[1] = offsetof(Arguments, cycles);
+    MPI_Type_create_struct(2, block_lengths, offsets, types, arguments_type);
+    MPI_Type_commit(arguments_type);
+}
+#endif
+
+// function that lets rank 0 parse the command line arguments and broadcast them to all other ranks
+Arguments broadcast_arguments(int argc, char* argv[]) {
+    int rank {0};
+#ifdef WITH_MPI
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Datatype arguments_type;
+    create_mpi_arguments_type(&arguments_type);
+#endif
+    Arguments args {};
+    ParseStatus status {};
+    if (rank == 0) {
+        std::tie(args, status) = parse_arguments(argc, argv);
+    }
+
+    // If an error occurred, abort the program
+    if (status == ParseStatus::ERROR) {
 #ifdef WITH_MPI
         MPI_Abort(MPI_COMM_WORLD, 1);   
 #else
@@ -97,7 +136,45 @@ Arguments parse_arguments(int argc, char* argv[]) {
 #endif
     }
 
+    // If help or version is requested, finalize MPI and exit
+    if (status == ParseStatus::HELP || status == ParseStatus::VERSION) {
+#ifdef WITH_MPI
+        MPI_Finalize();
+#endif
+        std::exit(0);
+    }
+
+#ifdef WITH_MPI
+    MPI_Bcast(&args, 1, arguments_type, 0, MPI_COMM_WORLD);
+
+#endif
     return args;
+}
+
+// function that provides runtime feedback on the command line arguments,
+// the number of ranks, and the number of threads
+void report_runtime_parameters(const Arguments& args) {
+    int rank {0};
+    int size {1};
+#ifdef WITH_MPI
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+#endif
+    if (rank == 0) {
+        // determine the number of threads
+        int threads {1};
+#ifdef _OPENMP
+#pragma omp parallel
+        threads = omp_get_max_threads();
+#endif
+        std::stringstream msg;
+        msg << "# Running with\n"
+            << "#     ranks=" << size << "\n"
+            << "#     threads=" << threads << "\n"
+            << "#     duration=" << args.duration << "\n"
+            << "#     cycles=" << args.cycles << std::endl;
+        std::cout << msg.str();
+    }
 }
 
 // function to create a timestamp in the format "YYYY-MM-DD HH:MM:SS.mmm"
@@ -154,69 +231,12 @@ void busy_wait(int duration) {
     }
 }
 
-// function to create and commit a custom MPI data type for the Arguments structure
-#ifdef WITH_MPI
-void create_mpi_arguments_type(MPI_Datatype* arguments_type) {
-    MPI_Datatype types[2] = {MPI_INT, MPI_INT};
-    int block_lengths[2] = {1, 1};
-    MPI_Aint offsets[2];
-    offsets[0] = offsetof(Arguments, duration);
-    offsets[1] = offsetof(Arguments, cycles);
-    MPI_Type_create_struct(2, block_lengths, offsets, types, arguments_type);
-    MPI_Type_commit(arguments_type);
-}
-#endif
-
-// function that lets rank 0 parse the command line arguments and broadcast them to all other ranks
-Arguments broadcast_arguments(int argc, char* argv[]) {
-    int rank {0};
-#ifdef WITH_MPI
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Datatype arguments_type;
-    create_mpi_arguments_type(&arguments_type);
-#endif
-    Arguments args;
-    if (rank == 0) {
-        args = parse_arguments(argc, argv);
-    }
-#ifdef WITH_MPI
-    MPI_Bcast(&args, 1, arguments_type, 0, MPI_COMM_WORLD);
-#endif
-    return args;
-}
-
-// function that provides runtime feedback on the command line arguments,
-// the number of ranks, and the number of threads
-void report_runtime(const Arguments& args) {
-    int rank {0};
-    int size {1};
-#ifdef WITH_MPI
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &size);
-#endif
-    if (rank == 0) {
-        // determine the number of threads
-        int threads {1};
-#ifdef _OPENMP
-#pragma omp parallel
-        threads = omp_get_max_threads();
-#endif
-        std::stringstream msg;
-        msg << "# Running with\n"
-            << "#     ranks=" << size << "\n"
-            << "#     threads=" << threads << "\n"
-            << "#     duration=" << args.duration << "\n"
-            << "#     cycles=" << args.cycles << std::endl;
-        std::cout << msg.str();
-    }
-}
-
 int main(int argc, char* argv[]) {
 #ifdef WITH_MPI
     MPI_Init(&argc, &argv);
 #endif
     auto args = broadcast_arguments(argc, argv);
-    report_runtime(args);
+    report_runtime_parameters(args);
 #ifdef WITH_MPI
     MPI_Barrier(MPI_COMM_WORLD);
 #endif
@@ -225,9 +245,11 @@ int main(int argc, char* argv[]) {
 #pragma omp parallel
 #endif
     {
+        // Report initial core binding
         report_core();
         for (int i = 0; i < args.cycles; ++i) {
             busy_wait(args.duration);
+            // Report core binding after busy wait to check pinning over time
             report_core();
         }
     }
