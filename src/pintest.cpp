@@ -71,6 +71,7 @@ auto parse_arguments(int argc, char* argv[]) {
     } catch (const po::error& e) {
         std::cerr << "Error: " << e.what() << std::endl;
         status = ParseStatus::ERROR;
+        return std::make_tuple(args, status);
     }
     po::notify(vm);
 
@@ -150,6 +151,31 @@ Arguments broadcast_arguments(int argc, char* argv[]) {
     return args;
 }
 
+// function that provides runtime feedback on the command line arguments,
+// the number of ranks, and the number of threads
+void report_runtime_parameters(const Arguments& args) {
+    int rank {0};
+    int size {1};
+#ifdef WITH_MPI
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+#endif
+    if (rank == 0) {
+        // determine the number of threads
+        int threads {1};
+#ifdef _OPENMP
+#pragma omp parallel
+        threads = omp_get_max_threads();
+#endif
+        std::stringstream msg;
+        msg << "# Running with\n"
+            << "#     ranks=" << size << "\n"
+            << "#     threads=" << threads << "\n"
+            << "#     duration=" << args.duration << "\n"
+            << "#     cycles=" << args.cycles << std::endl;
+        std::cout << msg.str();
+    }
+}
 
 // function to create a timestamp in the format "YYYY-MM-DD HH:MM:SS.mmm"
 std::string create_timestamp() {
@@ -205,38 +231,12 @@ void busy_wait(int duration) {
     }
 }
 
-// function that provides runtime feedback on the command line arguments,
-// the number of ranks, and the number of threads
-void report_runtime(const Arguments& args) {
-    int rank {0};
-    int size {1};
-#ifdef WITH_MPI
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &size);
-#endif
-    if (rank == 0) {
-        // determine the number of threads
-        int threads {1};
-#ifdef _OPENMP
-#pragma omp parallel
-        threads = omp_get_max_threads();
-#endif
-        std::stringstream msg;
-        msg << "# Running with\n"
-            << "#     ranks=" << size << "\n"
-            << "#     threads=" << threads << "\n"
-            << "#     duration=" << args.duration << "\n"
-            << "#     cycles=" << args.cycles << std::endl;
-        std::cout << msg.str();
-    }
-}
-
 int main(int argc, char* argv[]) {
 #ifdef WITH_MPI
     MPI_Init(&argc, &argv);
 #endif
     auto args = broadcast_arguments(argc, argv);
-    report_runtime(args);
+    report_runtime_parameters(args);
 #ifdef WITH_MPI
     MPI_Barrier(MPI_COMM_WORLD);
 #endif
@@ -245,9 +245,11 @@ int main(int argc, char* argv[]) {
 #pragma omp parallel
 #endif
     {
+        // Report initial core binding
         report_core();
         for (int i = 0; i < args.cycles; ++i) {
             busy_wait(args.duration);
+            // Report core binding after busy wait to check pinning over time
             report_core();
         }
     }
