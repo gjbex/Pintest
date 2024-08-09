@@ -5,6 +5,14 @@ This is an application to
 - verify that pinning works as expected.
 
 
+## What is it?
+
+1. `src`: source code of the applications.
+1. `CMakeLists.txt`: CMake file to build the applications, for instructions, see below.
+1. `LICENSE`: the license for the software.
+1. `CONTRIBUTING.md`: guidelines for contributing to the project.
+
+
 ## How to build?
 
 ### Requirements
