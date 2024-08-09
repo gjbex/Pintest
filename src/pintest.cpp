@@ -51,7 +51,7 @@ enum class ParseStatus {
 };
 
 // Parse the command line arguments
-auto parse_arguments(int argc, char* argv[]) {
+std::tuple<Arguments, ParseStatus> parse_arguments(int argc, char* argv[]) {
     Arguments args;
     namespace po = boost::program_options;
     po::options_description desc("Allowed options");
